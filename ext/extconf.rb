@@ -27,6 +27,8 @@ if ENV.key?("RUBY_SANITIZE")
 	$LDFLAGS << " -fsanitize=address -fsanitize=undefined"
 end
 
+have_func("rb_tracearg_instruction_sequence", "ruby/debug.h")
+
 create_header
 
 # Generate the makefile to compile the native binary into `ext/`:

@@ -9,6 +9,7 @@
 static const int DEBUG = 0;
 
 static ID id_call;
+static ID id_instruction_sequence;
 static ID id_path;
 
 struct Ruby_Coverage_Tracer {
@@ -32,6 +33,10 @@ struct Ruby_Coverage_Tracer {
 	// Re-entrancy guard. Set while the user callback is being invoked so that
 	// any RUBY_EVENT_LINE events fired by the callback itself are ignored.
 	int in_callback;
+
+	// Used on Rubies where rb_tracearg_instruction_sequence is not part of the
+	// public extension headers.
+	VALUE script_compiled_tracepoint;
 };
 
 static void Ruby_Coverage_Tracer_mark(void *pointer)
@@ -40,6 +45,7 @@ static void Ruby_Coverage_Tracer_mark(void *pointer)
 	rb_gc_mark_movable(tracer->callback);
 	rb_gc_mark_movable(tracer->counts);
 	rb_gc_mark_movable(tracer->last_counts);
+	rb_gc_mark_movable(tracer->script_compiled_tracepoint);
 }
 
 static void Ruby_Coverage_Tracer_free(void *pointer)
@@ -53,6 +59,7 @@ static void Ruby_Coverage_Tracer_compact(void *pointer)
 	tracer->callback    = rb_gc_location(tracer->callback);
 	tracer->counts      = rb_gc_location(tracer->counts);
 	tracer->last_counts = rb_gc_location(tracer->last_counts);
+	tracer->script_compiled_tracepoint = rb_gc_location(tracer->script_compiled_tracepoint);
 }
 
 static const rb_data_type_t Ruby_Coverage_Tracer_type = {
@@ -135,6 +142,7 @@ static VALUE Ruby_Coverage_Tracer_allocate(VALUE klass)
 	tracer->last_path_pointer = 0;
 	tracer->last_counts       = Qnil;
 	tracer->in_callback       = 0;
+	tracer->script_compiled_tracepoint = Qnil;
 
 	return self;
 }
@@ -150,14 +158,14 @@ static VALUE Ruby_Coverage_Tracer_initialize(VALUE self)
 	return self;
 }
 
-// Installed via rb_add_event_hook2 with RUBY_EVENT_HOOK_FLAG_RAW_ARG.
-// Fires when any Ruby script is compiled, with access to the trace argument.
+// Fires when any Ruby script is compiled and invokes the user callback
+// immediately so the counts array is registered before the first line event.
 //
-// Retrieves the compiled RubyVM::InstructionSequence via
-// rb_tracearg_instruction_sequence and invokes the user callback immediately,
-// so the counts array is registered before the first line event fires.
 // Also invalidates the rb_sourcefile() pointer cache so the line hook
 // re-evaluates which counts array to use.
+#ifdef HAVE_RB_TRACEARG_INSTRUCTION_SEQUENCE
+// Installed via rb_add_event_hook2 with RUBY_EVENT_HOOK_FLAG_RAW_ARG.
+// Uses the direct C API to extract the compiled instruction sequence.
 static void Ruby_Coverage_Tracer_on_script_compiled(VALUE data, const rb_trace_arg_t *trace_arg)
 {
 	struct Ruby_Coverage_Tracer *tracer;
@@ -187,6 +195,33 @@ static void Ruby_Coverage_Tracer_on_script_compiled(VALUE data, const rb_trace_a
 		rb_hash_aset(tracer->counts, path, counts);
 	}
 }
+#else
+// Installed via rb_tracepoint_new.
+// Uses the public TracePoint object API to extract the compiled instruction
+// sequence when the direct C helper is not declared in ruby/debug.h.
+static void Ruby_Coverage_Tracer_on_script_compiled(VALUE tpval, void *data)
+{
+	struct Ruby_Coverage_Tracer *tracer = data;
+
+	tracer->last_path_pointer = 0;
+
+	if (tracer->in_callback) return;
+
+	VALUE iseq = rb_funcall(tpval, id_instruction_sequence, 0);
+	if (NIL_P(iseq)) { return; }
+
+	VALUE path = rb_funcall(iseq, id_path, 0);
+	if (NIL_P(path)) { return; }
+
+	if (!NIL_P(rb_hash_lookup(tracer->counts, path))) { return; }
+
+	VALUE counts = Ruby_Coverage_Tracer_invoke_callback(tracer, path, iseq);
+
+	if (!NIL_P(counts)) {
+		rb_hash_aset(tracer->counts, path, counts);
+	}
+}
+#endif
 
 // Installed via rb_add_event_hook. Fires on every new source line.
 //
@@ -249,12 +284,26 @@ static void Ruby_Coverage_Tracer_on_line(rb_event_flag_t event, VALUE data, VALU
 
 static VALUE Ruby_Coverage_Tracer_start(VALUE self)
 {
+	struct Ruby_Coverage_Tracer *tracer;
+	TypedData_Get_Struct(self, struct Ruby_Coverage_Tracer, &Ruby_Coverage_Tracer_type, tracer);
+
+	#ifdef HAVE_RB_TRACEARG_INSTRUCTION_SEQUENCE
 	rb_add_event_hook2(
 		(rb_event_hook_func_t)Ruby_Coverage_Tracer_on_script_compiled,
 		RUBY_EVENT_SCRIPT_COMPILED,
 		self,
 		RUBY_EVENT_HOOK_FLAG_SAFE | RUBY_EVENT_HOOK_FLAG_RAW_ARG
 	);
+	#else
+	if (NIL_P(tracer->script_compiled_tracepoint)) {
+		RB_OBJ_WRITE(self, &tracer->script_compiled_tracepoint,
+			rb_tracepoint_new(Qnil, RUBY_EVENT_SCRIPT_COMPILED,
+				Ruby_Coverage_Tracer_on_script_compiled, tracer));
+	}
+
+	rb_tracepoint_enable(tracer->script_compiled_tracepoint);
+	#endif
+
 	rb_add_event_hook(Ruby_Coverage_Tracer_on_line, RUBY_EVENT_LINE, self);
 
 	return self;
@@ -262,11 +311,18 @@ static VALUE Ruby_Coverage_Tracer_start(VALUE self)
 
 static VALUE Ruby_Coverage_Tracer_stop(VALUE self)
 {
-	rb_remove_event_hook_with_data((rb_event_hook_func_t)Ruby_Coverage_Tracer_on_script_compiled, self);
-	rb_remove_event_hook_with_data(Ruby_Coverage_Tracer_on_line, self);
-
 	struct Ruby_Coverage_Tracer *tracer;
 	TypedData_Get_Struct(self, struct Ruby_Coverage_Tracer, &Ruby_Coverage_Tracer_type, tracer);
+
+	#ifdef HAVE_RB_TRACEARG_INSTRUCTION_SEQUENCE
+	rb_remove_event_hook_with_data((rb_event_hook_func_t)Ruby_Coverage_Tracer_on_script_compiled, self);
+	#else
+	if (!NIL_P(tracer->script_compiled_tracepoint)) {
+		rb_tracepoint_disable(tracer->script_compiled_tracepoint);
+	}
+	#endif
+
+	rb_remove_event_hook_with_data(Ruby_Coverage_Tracer_on_line, self);
 
 	tracer->last_path_pointer = 0;
 	RB_OBJ_WRITE(self, &tracer->last_counts, Qnil);
@@ -277,6 +333,7 @@ static VALUE Ruby_Coverage_Tracer_stop(VALUE self)
 void Init_Ruby_Coverage_Tracer(VALUE Ruby_Coverage)
 {
 	id_call = rb_intern("call");
+	id_instruction_sequence = rb_intern("instruction_sequence");
 	id_path = rb_intern("path");
 
 	VALUE Ruby_Coverage_Tracer = rb_define_class_under(Ruby_Coverage, "Tracer", rb_cObject);
