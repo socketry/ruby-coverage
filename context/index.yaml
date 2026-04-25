@@ -1,0 +1,13 @@
+# Automatically generated context index for Utopia::Project guides.
+# Do not edit then files in this directory directly, instead edit the guides and then run `bake utopia:project:agent:context:update`.
+---
+description: A native reimplementation of Ruby's Coverage module with accumulating
+  line counts.
+metadata:
+  documentation_uri: https://socketry.github.io/ruby-coverage/
+  source_code_uri: https://github.com/socketry/ruby-coverage.git
+files:
+- path: getting-started.md
+  title: Getting Started
+  description: This guide explains how to use `ruby-coverage` to collect coverage
+    for code that may be evaluated multiple times under the same path.
