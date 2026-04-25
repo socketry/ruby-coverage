@@ -62,7 +62,9 @@ gem "covered"
 
 ## Releases
 
-There are no documented releases.
+Please see the [project releases](https://socketry.github.io/ruby-coverage/releases/index) for all releases.
+
+### v0.0.1
 
 ## See Also
 
