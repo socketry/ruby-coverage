@@ -5,11 +5,7 @@
 
 require_relative "coverage/version"
 
-begin
-	require "Ruby_Coverage"
-rescue LoadError => error
-	warn "Could not load native coverage extension: #{error}"
-end
+require "Ruby_Coverage"
 
 module Ruby
 	# A reimplementation of Ruby's built-in `Coverage` module backed by
