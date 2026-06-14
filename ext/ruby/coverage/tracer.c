@@ -273,8 +273,8 @@ static void Ruby_Coverage_Tracer_on_line(rb_event_flag_t event, VALUE data, VALU
 
 	// Counts are 1-indexed: index 0 is unused (nil), index N is the hit count
 	// for source line N. Grow the array if necessary.
-	while (RARRAY_LEN(tracer->last_counts) <= line) {
-		rb_ary_push(tracer->last_counts, Qnil);
+	if (RARRAY_LEN(tracer->last_counts) <= line) {
+		rb_ary_resize(tracer->last_counts, line + 1);
 	}
 
 	VALUE current = rb_ary_entry(tracer->last_counts, line);

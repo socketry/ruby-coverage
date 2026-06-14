@@ -112,6 +112,23 @@ describe Ruby::Coverage::Tracer do
 		expect(counts[1]).to be == 2
 	end
 	
+	it "resizes count arrays for sparse high line numbers" do
+		files = {}
+		tracer = Ruby::Coverage::Tracer.new{|path, iseq| files[path] ||= []}
+		
+		tracer.start
+		
+		path = "/tmp/ruby_coverage_tracer_sparse.rb"
+		line = 100
+		Module.new.module_eval("x = 1", path, line)
+		
+		tracer.stop
+		
+		counts = files[path]
+		expect(counts).not.to be_nil
+		expect(counts[line]).to be == 1
+	end
+	
 	it "returns nil from the callback to skip tracking a file" do
 		files = {}
 		tracer = Ruby::Coverage::Tracer.new{|path, iseq| nil}
