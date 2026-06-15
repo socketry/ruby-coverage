@@ -27,7 +27,7 @@ if ENV.key?("RUBY_SANITIZE")
 	$LDFLAGS << " -fsanitize=address -fsanitize=undefined"
 end
 
-have_func("rb_tracearg_instruction_sequence", "ruby/debug.h")
+have_func("rb_tracearg_instruction_sequence((rb_trace_arg_t *)0)", "ruby/debug.h")
 
 create_header
 

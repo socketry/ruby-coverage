@@ -291,9 +291,6 @@ static void Ruby_Coverage_Tracer_on_line(VALUE data, const rb_trace_arg_t *trace
 
 static VALUE Ruby_Coverage_Tracer_start(VALUE self)
 {
-	struct Ruby_Coverage_Tracer *tracer;
-	TypedData_Get_Struct(self, struct Ruby_Coverage_Tracer, &Ruby_Coverage_Tracer_type, tracer);
-
 	#ifdef HAVE_RB_TRACEARG_INSTRUCTION_SEQUENCE
 	rb_add_event_hook2(
 		(rb_event_hook_func_t)Ruby_Coverage_Tracer_on_script_compiled,
@@ -302,6 +299,9 @@ static VALUE Ruby_Coverage_Tracer_start(VALUE self)
 		RUBY_EVENT_HOOK_FLAG_SAFE | RUBY_EVENT_HOOK_FLAG_RAW_ARG
 	);
 	#else
+	struct Ruby_Coverage_Tracer *tracer;
+	TypedData_Get_Struct(self, struct Ruby_Coverage_Tracer, &Ruby_Coverage_Tracer_type, tracer);
+
 	if (NIL_P(tracer->script_compiled_tracepoint)) {
 		RB_OBJ_WRITE(self, &tracer->script_compiled_tracepoint,
 			rb_tracepoint_new(Qnil, RUBY_EVENT_SCRIPT_COMPILED,
