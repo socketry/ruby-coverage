@@ -21,6 +21,7 @@ end
 
 group :test do
 	gem "sus"
+	gem "sus-fixtures-benchmark"
 	gem "covered"
 	
 	gem "rubocop"

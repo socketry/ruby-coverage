@@ -24,6 +24,11 @@ def before_test
 	build
 end
 
+def benchmark
+	build
+	system("sus --verbose benchmark")
+end
+
 # Update the project documentation with the new version number.
 #
 # @parameter version [String] The new version number.
