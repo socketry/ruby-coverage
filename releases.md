@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v0.1.2
 
   - Fix native extension builds on Windows when `rb_tracearg_instruction_sequence` is not declared by Ruby's public headers, and avoid an unused variable compiler warning.
 

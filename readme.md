@@ -20,6 +20,10 @@ Please see the [project documentation](https://socketry.github.io/ruby-coverage/
 
 Please see the [project releases](https://socketry.github.io/ruby-coverage/releases/index) for all releases.
 
+### v0.1.2
+
+  - Fix native extension builds on Windows when `rb_tracearg_instruction_sequence` is not declared by Ruby's public headers, and avoid an unused variable compiler warning.
+
 ### v0.1.1
 
   - Fix an unused variable compiler warning in the native extension.
