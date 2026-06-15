@@ -223,43 +223,43 @@ static void Ruby_Coverage_Tracer_on_script_compiled(VALUE tpval, void *data)
 }
 #endif
 
-// Installed via rb_add_event_hook. Fires on every new source line.
+// Installed via rb_add_event_hook2 with RUBY_EVENT_HOOK_FLAG_RAW_ARG. Fires on
+// every new source line.
 //
-// Uses rb_sourcefile() pointer comparison as an O(1) same-file sentinel.
+// Uses rb_tracearg_path() pointer comparison as an O(1) same-file sentinel.
 // On first entry to a new file, checks if the script_compiled hook already
 // registered a counts array. If not (file was compiled before the tracer
 // started), falls back to rb_profile_frames to get the iseq and invokes the
 // user callback, matching the behaviour of the script_compiled path.
-static void Ruby_Coverage_Tracer_on_line(rb_event_flag_t event, VALUE data, VALUE self, ID method_id, VALUE klass)
+static void Ruby_Coverage_Tracer_on_line(VALUE data, const rb_trace_arg_t *trace_arg)
 {
 	struct Ruby_Coverage_Tracer *tracer;
 	TypedData_Get_Struct(data, struct Ruby_Coverage_Tracer, &Ruby_Coverage_Tracer_type, tracer);
 
 	if (tracer->in_callback) return;
 
-	uintptr_t current_path_pointer = (uintptr_t)rb_sourcefile();
+	VALUE path = rb_tracearg_path((rb_trace_arg_t *)trace_arg);
+	if (NIL_P(path)) return;
+
+	uintptr_t current_path_pointer = (uintptr_t)RSTRING_PTR(path);
 
 	if (tracer->last_path_pointer != current_path_pointer) {
 		tracer->last_path_pointer = current_path_pointer;
 
-		const char *path_cstr = rb_sourcefile();
 		VALUE counts = Qnil;
 
-		if (path_cstr) {
-			VALUE path = rb_str_new_cstr(path_cstr);
-			counts = rb_hash_lookup(tracer->counts, path);
+		counts = rb_hash_lookup(tracer->counts, path);
 
-			if (NIL_P(counts)) {
-				// File was compiled before the tracer started; inspect the current
-				// frame to recover the active instruction sequence.
-				VALUE iseq = Ruby_Coverage_Tracer_current_iseq();
+		if (NIL_P(counts)) {
+			// File was compiled before the tracer started; inspect the current
+			// frame to recover the active instruction sequence.
+			VALUE iseq = Ruby_Coverage_Tracer_current_iseq();
 
-				if (!NIL_P(iseq)) {
-					counts = Ruby_Coverage_Tracer_invoke_callback(tracer, path, iseq);
+			if (!NIL_P(iseq)) {
+				counts = Ruby_Coverage_Tracer_invoke_callback(tracer, path, iseq);
 
-					if (!NIL_P(counts)) {
-						rb_hash_aset(tracer->counts, path, counts);
-					}
+				if (!NIL_P(counts)) {
+					rb_hash_aset(tracer->counts, path, counts);
 				}
 			}
 		}
@@ -269,7 +269,7 @@ static void Ruby_Coverage_Tracer_on_line(rb_event_flag_t event, VALUE data, VALU
 
 	if (NIL_P(tracer->last_counts)) return;
 
-	int line = rb_sourceline();
+	int line = FIX2INT(rb_tracearg_lineno((rb_trace_arg_t *)trace_arg));
 
 	// Counts are 1-indexed: index 0 is unused (nil), index N is the hit count
 	// for source line N. Grow the array if necessary.
@@ -304,7 +304,12 @@ static VALUE Ruby_Coverage_Tracer_start(VALUE self)
 	rb_tracepoint_enable(tracer->script_compiled_tracepoint);
 	#endif
 
-	rb_add_event_hook(Ruby_Coverage_Tracer_on_line, RUBY_EVENT_LINE, self);
+	rb_add_event_hook2(
+		(rb_event_hook_func_t)Ruby_Coverage_Tracer_on_line,
+		RUBY_EVENT_LINE,
+		self,
+		RUBY_EVENT_HOOK_FLAG_SAFE | RUBY_EVENT_HOOK_FLAG_RAW_ARG
+	);
 
 	return self;
 }
@@ -322,7 +327,7 @@ static VALUE Ruby_Coverage_Tracer_stop(VALUE self)
 	}
 	#endif
 
-	rb_remove_event_hook_with_data(Ruby_Coverage_Tracer_on_line, self);
+	rb_remove_event_hook_with_data((rb_event_hook_func_t)Ruby_Coverage_Tracer_on_line, self);
 
 	tracer->last_path_pointer = 0;
 	RB_OBJ_WRITE(self, &tracer->last_counts, Qnil);
