@@ -10,36 +10,18 @@ Add the gem to your project:
 $ bundle add ruby-coverage
 ~~~
 
-If you are using `covered`, add that too:
-
-~~~ bash
-$ bundle add covered
-~~~
-
-## Motivation
-
-Ruby's built-in `Coverage` module stores counters on the compiled instruction sequence (`ISeq`). That works well for ordinary files loaded once, but it breaks down when the same logical file is compiled more than once under the same path.
-
-Use `ruby-coverage` when you need:
-
-- **Stable path-based accumulation**: Re-evaluating the same path should continue incrementing the same counters.
-- **Coverage for dynamic loading patterns**: Test frameworks and loaders may use `eval` or `module_eval` with a synthetic filename.
-- **A coverage model that matches reporting tools**: If your reporting is path-oriented, resetting counters on every recompile produces misleading results.
-
-Without this library, a recompiled file can replace the previous coverage state because stdlib `Coverage` treats each compile as a distinct `ISeq`. `ruby-coverage` instead owns the counter store and keys it by path.
-
 ## Core Concepts
 
 `ruby-coverage` has two layers:
 
-- `{Ruby::Coverage}` provides a module-level API similar to Ruby's built-in `Coverage` module.
-- `{Ruby::Coverage::Tracer}` is the low-level primitive that decides which counter array should be used for each path.
+- `{ruby Ruby::Coverage}` provides a module-level API similar to Ruby's built-in `Coverage` module.
+- `{ruby Ruby::Coverage::Tracer}` is the low-level primitive that decides which counter array should be used for each path.
 
 In both cases, the key design choice is that counters are associated with a file path rather than a specific compiled `ISeq`.
 
 ## Basic Usage
 
-If you want a drop-in API that behaves like the built-in coverage module, start here:
+If you want a familiar API that behaves like the built-in coverage module, start here:
 
 ~~~ ruby
 require "ruby/coverage"
@@ -55,11 +37,44 @@ pp result[path]
 # => {:lines=>[nil, 2]}
 ~~~
 
+`Ruby::Coverage.result` returns a hash keyed by path. Each value is a hash with a `:lines` array where executable lines contain hit counts, executable-but-unexecuted lines contain `0`, and non-executable lines contain `nil`.
+
 This is the simplest way to get path-based accumulation across repeated evaluation of the same file.
+
+Use `Ruby::Coverage.peek_result` to read counts without stopping coverage:
+
+~~~ ruby
+Ruby::Coverage.start
+
+path = "/tmp/example.rb"
+Module.new.module_eval("x = 1", path)
+
+result = Ruby::Coverage.peek_result
+pp result[path]
+# => {:lines=>[nil, 1]}
+
+Ruby::Coverage.result
+~~~
+
+Use `Ruby::Coverage.result(stop: false, clear: true)` to clear accumulated counts while keeping coverage active:
+
+~~~ ruby
+Ruby::Coverage.start
+
+path = "/tmp/example.rb"
+Module.new.module_eval("x = 1", path)
+
+Ruby::Coverage.result(stop: false, clear: true)
+
+pp Ruby::Coverage.peek_result[path]
+# => nil
+
+Ruby::Coverage.result
+~~~
 
 ## Using a Custom Tracer
 
-If you need more control over how counters are allocated or cached, use `{Ruby::Coverage::Tracer}` directly.
+If you need more control over how counters are allocated or cached, use `{ruby Ruby::Coverage::Tracer}` directly.
 
 This is useful when you need:
 
@@ -68,8 +83,7 @@ This is useful when you need:
 - **Integration with other tooling**: Control exactly when and how coverage data is initialized.
 
 ~~~ ruby
-require_relative "config/environment"
-require_relative "lib/ruby/coverage"
+require "ruby/coverage"
 
 files = {}
 
@@ -99,8 +113,8 @@ The callback receives the file path and the active `RubyVM::InstructionSequence`
 
 ### Best Practices
 
-- Use `{Ruby::Coverage}` if you only need path-based accumulation and a familiar API.
-- Use `{Ruby::Coverage::Tracer}` if you need custom filtering or storage behavior.
+- Use `{ruby Ruby::Coverage}` if you only need path-based accumulation and a familiar API.
+- Use `{ruby Ruby::Coverage::Tracer}` if you need custom filtering or storage behavior.
 - Reuse the same array for the same path if you want repeated evaluation to accumulate instead of reset.
 
 ### Common Pitfalls
@@ -108,15 +122,3 @@ The callback receives the file path and the active `RubyVM::InstructionSequence`
 - Do not expect stdlib `Coverage` semantics from this library. It intentionally changes the ownership model from `ISeq` to path.
 - If you evaluate code under different paths, you will get separate counters even if the source text is identical.
 - If you start coverage after code has already been defined, only code executed after startup will be tracked.
-
-## Integration with `covered`
-
-The `covered` gem can use `ruby-coverage` automatically when it is available.
-
-~~~ ruby
-# gems.rb / Gemfile
-gem "ruby-coverage"
-gem "covered"
-~~~
-
-This is a good fit when your test environment re-evaluates files and you want the final report to reflect cumulative path-based execution rather than per-compile counters.
