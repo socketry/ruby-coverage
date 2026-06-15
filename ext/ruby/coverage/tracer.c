@@ -6,8 +6,6 @@
 #include <ruby.h>
 #include <ruby/debug.h>
 
-static const int DEBUG = 0;
-
 static ID id_call;
 static ID id_instruction_sequence;
 static ID id_path;
