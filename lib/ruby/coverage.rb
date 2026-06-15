@@ -67,13 +67,7 @@ module Ruby
 				return self if @tracer
 				
 				@files  = {}
-				@tracer = Tracer.new do |path, iseq|
-					@files[path] ||= begin
-						counts = []
-						executable_lines(iseq).each{|line| counts[line] = 0}
-						counts
-					end
-				end
+				@tracer = Tracer.new(&method(:prepare_counts))
 				@tracer.start
 				
 				self
@@ -113,17 +107,21 @@ module Ruby
 				elsif clear
 					@tracer&.stop
 					@files  = {}
-					@tracer = Tracer.new do |path, iseq|
-						@files[path] ||= begin
-							counts = []
-							executable_lines(iseq).each{|line| counts[line] = 0}
-							counts
-						end
-					end
+					@tracer = Tracer.new(&method(:prepare_counts))
 					@tracer.start
 				end
 				
 				result
+			end
+			
+			private
+			
+			def prepare_counts(path, iseq)
+				@files[path] ||= begin
+					counts = []
+					executable_lines(iseq).each{|line| counts[line] = 0}
+					counts
+				end
 			end
 		end
 	end

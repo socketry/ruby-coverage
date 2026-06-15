@@ -208,4 +208,31 @@ describe Ruby::Coverage do
 			expect(lines).to be(:include?, 2)
 		end
 	end
+	
+	with "prepare_counts" do
+		it "initialises executable lines once per path" do
+			source = <<~RUBY
+				x = 1
+				# comment
+				if x
+					x += 1
+				end
+			RUBY
+			
+			iseq = RubyVM::InstructionSequence.compile(source, "test.rb")
+			path = "/tmp/ruby_coverage_prepare_counts.rb"
+			
+			counts = Ruby::Coverage.send(:prepare_counts, path, iseq)
+			counts[1] = 10
+			
+			expect(counts[1]).to be == 10
+			expect(counts[2]).to be_nil
+			expect(counts[3]).to be == 0
+			expect(counts[4]).to be == 0
+			expect(Ruby::Coverage.send(:prepare_counts, path, iseq)).to be(:equal?, counts)
+		ensure
+			Ruby::Coverage.result if Ruby::Coverage.running?
+			Ruby::Coverage.instance_variable_set(:@files, {})
+		end
+	end
 end
