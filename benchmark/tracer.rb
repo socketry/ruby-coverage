@@ -19,6 +19,7 @@ describe Ruby::Coverage::Tracer do
 	def around
 		Dir.mktmpdir do |root|
 			@path = File.join(root, "workload.rb")
+			@hot_loop_path = File.join(root, "hot_loop.rb")
 			
 			File.write(@path, <<~RUBY)
 				i = 0
@@ -30,11 +31,29 @@ describe Ruby::Coverage::Tracer do
 				total
 			RUBY
 			
+			@hot_loop_source = <<~RUBY
+				-> do
+					i = 0
+					total = 0
+					while i < 1_000_000
+						total += i
+						i += 1
+					end
+					total
+				end
+			RUBY
+			
 			yield
 		end
 	end
 	
 	attr :path
+	attr :hot_loop_path
+	attr :hot_loop_source
+	
+	def compile_hot_loop
+		RubyVM::InstructionSequence.compile(self.hot_loop_source, self.hot_loop_path).eval
+	end
 	
 	def stop_standard_coverage
 		if ::Coverage.running?
@@ -77,6 +96,44 @@ describe Ruby::Coverage::Tracer do
 			ensure
 				tracer.stop
 			end
+		end
+	end
+	
+	measure "hot loop without coverage" do |repeats|
+		hot_loop = compile_hot_loop
+		
+		repeats.exactly(SAMPLES).times do
+			hot_loop.call
+		end
+	end
+	
+	measure "hot loop with stdlib coverage" do |repeats|
+		begin
+			::Coverage.start(lines: true)
+			hot_loop = compile_hot_loop
+			
+			repeats.exactly(SAMPLES).times do
+				hot_loop.call
+			end
+		ensure
+			stop_standard_coverage
+		end
+	end
+	
+	measure "hot loop with ruby coverage" do |repeats|
+		tracer = Ruby::Coverage::Tracer.new do |_path, _iseq|
+			[]
+		end
+		
+		begin
+			tracer.start
+			hot_loop = compile_hot_loop
+			
+			repeats.exactly(SAMPLES).times do
+				hot_loop.call
+			end
+		ensure
+			tracer.stop
 		end
 	end
 end
