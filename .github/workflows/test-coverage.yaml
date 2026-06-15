@@ -33,7 +33,7 @@ jobs:
       timeout-minutes: 5
       run: bundle exec bake test
     
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v7
       with:
         include-hidden-files: true
         if-no-files-found: error
@@ -51,8 +51,14 @@ jobs:
         ruby-version: ruby
         bundler-cache: true
     
-    - uses: actions/download-artifact@v6
+    - uses: actions/download-artifact@v8
+    
+    - name: Build extension
+      timeout-minutes: 5
+      run: bundle exec bake build
     
     - name: Validate coverage
       timeout-minutes: 5
+      env:
+        RUBYOPT: -Iext
       run: bundle exec bake covered:validate --paths */.covered.db \;
