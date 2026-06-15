@@ -161,7 +161,7 @@ describe Ruby::Coverage do
 			})
 		RUBY
 		
-		output = IO.popen([RbConfig.ruby, "-Ilib", "-"], "r+") do |io|
+		output = IO.popen([RbConfig.ruby, "-Ilib", "-Iext", "-"], "r+") do |io|
 			io.write(script)
 			io.close_write
 			io.read
