@@ -169,8 +169,7 @@ static VALUE Ruby_Coverage_Tracer_initialize(VALUE self)
 static void Ruby_Coverage_Tracer_on_script_compiled(VALUE data, const rb_trace_arg_t *trace_arg)
 {
 	struct Ruby_Coverage_Tracer *tracer;
-	TypedData_Get_Struct(data, struct Ruby_Coverage_Tracer,
-	                     &Ruby_Coverage_Tracer_type, tracer);
+	TypedData_Get_Struct(data, struct Ruby_Coverage_Tracer, &Ruby_Coverage_Tracer_type, tracer);
 
 	tracer->last_path_pointer = 0;
 
@@ -269,7 +268,7 @@ static void Ruby_Coverage_Tracer_on_line(VALUE data, const rb_trace_arg_t *trace
 
 	if (NIL_P(tracer->last_counts)) return;
 
-	int line = FIX2INT(rb_tracearg_lineno((rb_trace_arg_t *)trace_arg));
+	int line = RB_NUM2INT(rb_tracearg_lineno((rb_trace_arg_t *)trace_arg));
 
 	// Counts are 1-indexed: index 0 is unused (nil), index N is the hit count
 	// for source line N. Grow the array if necessary.
@@ -277,9 +276,19 @@ static void Ruby_Coverage_Tracer_on_line(VALUE data, const rb_trace_arg_t *trace
 		rb_ary_resize(tracer->last_counts, line + 1);
 	}
 
-	VALUE current = rb_ary_entry(tracer->last_counts, line);
-	rb_ary_store(tracer->last_counts, line,
-	             NIL_P(current) ? INT2FIX(1) : INT2FIX(FIX2INT(current) + 1));
+	VALUE *counts = RARRAY_PTR(tracer->last_counts);
+	VALUE current = counts[line];
+
+	// Store only immediate values through the raw array pointer. This avoids write-barrier issues; counters saturate at FIXNUM_MAX.
+	if (NIL_P(current)) {
+		counts[line] = RB_INT2FIX(1);
+	} else if (RB_FIXNUM_P(current)) {
+		long count = RB_FIX2LONG(current);
+
+		if (count < RUBY_FIXNUM_MAX) {
+			counts[line] = RB_LONG2FIX(count + 1);
+		}
+	}
 }
 
 static VALUE Ruby_Coverage_Tracer_start(VALUE self)
