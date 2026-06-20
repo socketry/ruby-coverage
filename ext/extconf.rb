@@ -4,6 +4,8 @@
 # Released under the MIT License.
 # Copyright, 2026, by Samuel Williams.
 
+return if RUBY_PLATFORM =~ /java/
+
 require "mkmf"
 
 gem_name = File.basename(__dir__)
